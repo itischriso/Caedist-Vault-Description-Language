@@ -1,0 +1,171 @@
+
+; Example CVDL topology for a six-vault Caedist deployment.
+; This script shows the full lifecycle:
+; deploy -> start -> init -> unseal -> login -> credential handling
+; -> PKI build -> transit auto-unseal wiring -> TLS enablement -> bounce -> status
+
+; secure_storage controls where bootstrap credentials go after init.
+; Valid values:
+;   "nosave"
+;   "file"
+;   "encrypted_file"         ; TODO
+;   "vault=http://127.0.0.1:9319"
+;
+; This example keeps credentials in memory and surfaces them for manual handling.
+; A different .caedist file could choose Vault-backed persistence for permanent
+; or throw-away environments.
+
+secure_storage = "nosave"
+
+; Global variables use @.
+; This root avoids repeating the full filesystem path on every vault entry and
+; lets the whole topology move together by changing one value. 
+; This variable is optional and if not speciified the path must be contained in the collection. 
+@Single_vault_root = "/path/to/secure/caedist-vault/"
+
+; Collections define one or more vaults.
+; Each entry is:
+;   "alias","port","directory"
+;
+; Collection operators apply to all members of the collection.
+
+default_vaults = {
+    "system","8900","system-vault"
+    "system-unsealer","8930","system-unsealer"
+    "user","8800","user-vault"
+    "root-ca","8450","root-ca-vault"
+    "user-unsealer","8830","user-unsealer"
+    "intermediate-ca","8550","intermediate-ca-vault"
+}
+
+
+unsealing_vaults = {
+    "system-unsealer","8930","system-unsealer"
+    "user-unsealer","8830","user-unsealer"
+}
+
+; Baseline bring-up.
+; Every vault is deployed first as a generic HTTP, Shamir-sealed instance.
+default_vaults().deploy
+
+default_vaults().start
+
+default_vaults().init
+default_vaults().unseal
+default_vaults().login
+default_vaults().save_to_ram[] ; [] indicates a memory-oriented operation/result
+
+; Handle bootstrap credentials according to the selected secure_storage mode.
+
+switch(secure_storage){
+    case: vault {
+        default_vaults().savecreds()
+    }
+    
+    case: nosave {
+        emit_to_screen("please log into vaults manually")
+        emit_to_screen(default_vaults().save_to_ram[])
+        
+        ; Open one operator terminal per vault so the environment is already
+        ; pointed at the correct VAULT_ADDR for login, status, and follow-up work.
+        foreach default_vault in default_vaults{
+            spawn_terminal[default_vault]
+        }
+    }
+    
+    case: file {
+        emit_to_screen("Unsafe operation. \r\n Do not use for production credentials.\r\n Extreme security risk.\r\n")
+        default_vaults().savecreds()
+    }
+
+    case: encrypted_file {
+    }
+
+    default: vault {
+    }
+}
+
+;default_vaults().stop
+
+; PKI generation is delegated to the standalone helper while the vaults are
+; still unsealed and serving HTTP. This avoids a TLS bootstrap deadlock.
+; Root and intermediate are shown separately here because that is the preferred
+; topology, but the same vault could technically issue both roles.
+; *alias denotes a targeted vault reference.
+
+pki_build(root: *root-ca, intermediate: *intermediate-ca)
+
+; Targeted verbs act on a single vault.
+; The root and intermediate are started again after PKI material exists.
+
+start(*root-ca)
+start(*intermediate-ca)
+
+; add_role applies an additive capability to a specific vault.
+; The commented PKI role variants are left here to show the intended direction
+; of the language, even though this script uses the standalone PKI helper.
+;add_role.pki.root(*root-ca)
+;add_role.pki.intermediate(*intermediate-ca)
+add_role.unsealer(*system-unsealer)
+add_role.unsealer(*user-unsealer)
+
+; A smaller collection can be used when only part of the topology needs work.
+
+unsealing_vaults().stop
+unsealing_vaults().start
+unsealing_vaults().unseal
+unsealing_vaults().login
+
+; Vaults that should auto-unseal subscribe to a dedicated unsealer.
+add_role.unsealer_subscriber(*system)
+add_role.unsealer_subscriber(*user)
+add_role.unsealer_subscriber(*intermediate-ca)
+
+; Each subscriber is linked to an unsealer, restarted, and migrated from
+; Shamir seal to transit auto-unseal.
+unsealer_subscriber(*system).subscribeTo(*system-unsealer)
+stop(*system)
+start(*system)
+unsealer_subscriber(*system).migrate
+
+; Multiple subscribers may use the same unsealer.
+unsealer_subscriber(*intermediate-ca).subscribeTo(*system-unsealer)
+stop(*intermediate-ca)
+start(*intermediate-ca)
+unsealer_subscriber(*intermediate-ca).migrate
+
+unsealer_subscriber(*user).subscribeTo(*user-unsealer)
+stop(*user)
+start(*user)
+unsealer_subscriber(*user).migrate
+
+; Enable TLS on the vaults that should now move to HTTPS.
+tls_enable(*system)
+tls_enable(*user)
+tls_enable(*root-ca)
+tls_enable(*intermediate-ca)
+
+; transform updates the runner's internal understanding of each vault state.
+transform(*system -> tls_enabled)
+transform(*user -> tls_enabled)
+transform(*root-ca -> tls_enabled)
+transform(*intermediate-ca -> tls_enabled)
+
+emit_to_screen("TLS enabled. Bouncing vaults to apply new configuration...")
+
+; Bounce the HTTPS-enabled vaults so the new listener configuration is active.
+stop(*system)
+stop(*user)
+stop(*root-ca)
+stop(*intermediate-ca)
+
+start(*system)
+start(*user)
+start(*root-ca)
+start(*intermediate-ca)
+
+; Best practice: keep the root CA offline
+stop(*root-ca) 
+
+; Final status check across the whole topology.
+default_vaults().status

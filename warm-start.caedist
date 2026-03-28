@@ -1,0 +1,20 @@
+@Single_vault_root = "/home/chris/secure/caedist-vault/"
+
+default_vaults = {
+    "system","8900","system-vault"
+    "system-unsealer","8930","system-unsealer"
+    "user","8800","user-vault"
+    "root-ca","8450","root-ca-vault"
+    "user-unsealer","8830","user-unsealer"
+    "intermediate-ca","8550","intermediate-ca-vault"
+}
+
+emit_to_screen("Executing warm start...")
+
+default_vaults().start()
+
+emit_to_screen("All vaults started. Checking status...")
+
+default_vaults().status()
+
+emit_to_screen("Warm start complete. Vaults may require manual unsealing if not configured for auto-unseal.")

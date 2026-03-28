@@ -1,0 +1,159 @@
+
+; automated deployment will need to persist 
+; you could use another .caedist file to stand up a permenant or throw-away vault.
+; while the process of saving the keys _will_ break the purpose of the shamir quorm, it is (or should be perfomed in a controlled environment, and the keys are able to be correctly distributed)
+
+;secure_storage = "vault=http://127.0.0.1:9319" # vault, nosave, file, encrypted_file (encrypted_file todo)
+
+;everything is performed in memory -- you are given the opportunity to save the keys out manually.
+
+secure_storage = "nosave"
+
+; use this if you want all the vaults to share the same root path
+@Single_vault_root = "/path/to/secure/caedist-vault/"  ;@will be the identifier for variables
+
+; Collections
+; Not limited to the topology provided here
+; No fixed name 
+; specifies: 
+;   vault alias (used later and makes IaaC simplet)
+;   vault port
+;   vault directory - untested: "" use at your own risk
+
+
+default_vaults = {
+    "system","8900","system-vault"
+    "system-unsealer","8930","system-unsealer"
+    "user","8800","user-vault"
+    "root-ca","8450","root-ca-vault"
+    "user-unsealer","8830","user-unsealer"
+    "intermediate-ca","8550","intermediate-ca-vault"
+}
+
+
+unsealing_vaults = {
+    "system-unsealer","8930","system-unsealer"
+    "user-unsealer","8830","user-unsealer"
+}
+
+
+; verbs -- apply to all objects in the collection
+default_vaults().deploy
+
+default_vaults().start
+
+default_vaults().init
+default_vaults().unseal
+default_vaults().login
+default_vaults().save_to_ram[] # []denotes some kind of memory operation 
+
+
+; probably not strictly necessary for this use case, however switch statements may become vaulable in later iterations of the language
+
+switch(secure_storage){
+    case: vault {
+        default_vaults().savecreds()
+    }
+    
+    case: nosave {
+        emit_to_screen("please log into vaults manually") ; print to the screen thinking about emit.ToLog() and emit.ToScreen()
+        emit_to_screen(default_vaults().save_to_ram[])
+        
+        ; strictly speaking this _could_ have been specified at the collection levelm again this may become useful in the future
+        foreach default_vault in default_vaults{
+            spawn_terminal[default_vault]
+        }
+    }
+    
+    case: file {
+        emit_to_screen("Unsafe operation. \r\n Do not use for production credentials.\r\n Extreme security risk.\r\n")
+        default_vaults().savecreds()
+    }
+
+    case: encrypted_file {
+    }
+
+    default: vault {
+    }
+}
+
+;default_vaults().stop
+
+; We delegate the complex PKI generation to the standalone doer script
+; while the vaults are unsealed and in HTTP mode (avoiding the TLS deadlock!)
+;notice the use of the alias, denoted by *vault-alias
+
+pki_build(root: *root-ca, intermediate: *intermediate-ca) ; this was suggested by an LLM and it is jarring. it does not quite fit the rest of the language.
+
+; verbs -- applied at the individual level 
+; we dont have one, but we could build a retart verb to save lines.
+
+start(*root-ca)
+start(*intermediate-ca)
+
+;add_role allows us to set the vaults role
+
+;add_role.pki.root(*root-ca) # we do not have to deploy every role.
+;add_role.pki.intermediate(*intermediate-ca) # it is possible for the root ca to also be the intermediate ca, however this is not a good practice
+add_role.unsealer(*system-unsealer)
+add_role.unsealer(*user-unsealer)
+
+; apply to the collection demonstration of efficiency using a 'filtered' collection
+
+unsealing_vaults().stop
+unsealing_vaults().start
+unsealing_vaults().unseal
+unsealing_vaults().login
+
+
+
+add_role.unsealer_subscriber(*system) ; notice t
+add_role.unsealer_subscriber(*user)
+add_role.unsealer_subscriber(*intermediate-ca)
+
+;vaults to be unsealed subscribe to an unsealer where *a cannot subsribe to *a
+
+unsealer_subscriber(*system).subscribeTo(*system-unsealer)
+stop(*system)
+start(*system)
+unsealer_subscriber(*system).migrate
+
+;multiple subscribers can subscribe to a single vault
+;verbose-mode (singleton vaults) actions (could be condensed)
+
+unsealer_subscriber(*intermediate-ca).subscribeTo(*system-unsealer)
+stop(*intermediate-ca)
+start(*intermediate-ca)
+unsealer_subscriber(*intermediate-ca).migrate
+
+unsealer_subscriber(*user).subscribeTo(*user-unsealer)
+stop(*user)
+start(*user)
+unsealer_subscriber(*user).migrate
+
+;verb - enable tls -- the language could be extended to make it occur on collections, or maybe:
+;   tls_enable(*systemm *user, *root-ca, *intermediate-ca)
+
+tls_enable(*system)
+tls_enable(*user)
+tls_enable(*root-ca)
+tls_enable(*intermediate-ca)
+
+transform(*system -> tls_enabled)
+transform(*user -> tls_enabled)
+transform(*root-ca -> tls_enabled)
+transform(*intermediate-ca -> tls_enabled)
+
+emit_to_screen("TLS enabled. Bouncing vaults to apply new configuration...")
+
+stop(*system)
+stop(*user)
+stop(*root-ca)
+stop(*intermediate-ca)
+
+start(*system)
+start(*user)
+start(*root-ca)
+start(*intermediate-ca)
+
+default_vaults().status
