@@ -1,0 +1,83 @@
+; Example: Singleton Vault:
+
+; Could be used as a temporary repository to store crdentials for a larger Vault deployment and would look like:
+;    Code: python caedist_runner py singletonVaultExample.caedist
+; Add generic KV Engine (V2) 
+; Modify 'singletonVaultExample.caedist' to save to Vault
+;    Code: python caedist_runner py singletonVaultExample.caedist
+; manually supply the token to the sigleton Vault when requested
+  
+;Caution this arrangement breaks the purpose of the Shamir key quorum, however it provides a staging ground from which the quorum can be distributed and this tempoary vault destroyed or the KV engine disabled, destroying the records.  
+; Enable backups after sensitive records are removed as a productioninsation step.
+
+; secure_storage controls where bootstrap credentials go after init.
+; Valid values:
+;   "nosave"
+;   "file" Will save an unencrypted JSON file named 'init_keys.json' Use this option at your own risk.  
+;   "encrypted_file"         ; TODO
+;   "vault=http://127.0.0.1:9319"
+;
+; This example keeps credentials in memory and surfaces them for manual handling.
+; A different .caedist file could choose Vault-backed persistence for permanent
+; or throw-away environments.
+
+secure_storage = "file" 
+
+; Global variables use @.
+; This root avoids repeating the full filesystem path on every vault entry and
+; lets the whole topology move together by changing one value. 
+; This variable is optional and if not speciified the path must be contained in the collection. 
+;@Single_vault_root = "/path/to/secure/caedist-vault/" #Must be commented out if a singleton
+
+; Collections define one or more vaults.
+; Each entry is:
+;   "alias","port","directory"
+;
+; Collection operators apply to all members of the collection.
+
+default_vaults = {
+    "my-vault","16842","c:\my-vault\"
+}
+
+; Baseline bring-up.
+; Every vault is deployed first as a generic HTTP, Shamir-sealed instance.
+default_vaults().deploy
+
+default_vaults().start
+
+default_vaults().init
+default_vaults().unseal
+default_vaults().login
+default_vaults().save_to_ram[] ; [] indicates a memory-oriented operation/result
+
+; Handle bootstrap credentials according to the selected secure_storage mode.
+
+switch(secure_storage){
+    case: vault {
+        default_vaults().savecreds()
+    }
+    
+    case: nosave {
+        emit_to_screen("please log into vaults manually")
+        emit_to_screen(default_vaults().save_to_ram[])
+        
+        ; Open one operator terminal per vault so the environment is already
+        ; pointed at the correct VAULT_ADDR for login, status, and follow-up work.
+        foreach default_vault in default_vaults{
+            spawn_terminal[default_vault]
+        }
+    }
+    
+    case: file {
+        emit_to_screen("Unsafe operation. \r\n Do not use for production credentials.\r\n Extreme security risk.\r\n")
+        default_vaults().savecreds()
+    }
+
+    case: encrypted_file {
+    }
+
+    default: vault {
+    }
+}
+
+default_vaults().status
