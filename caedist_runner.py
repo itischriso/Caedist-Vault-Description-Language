@@ -7,6 +7,7 @@ import subprocess
 import os
 import time
 import getpass
+import sys
 from pathlib import Path
 import terminal_launcher
 
@@ -1130,7 +1131,7 @@ disable_mlock = true
     def execute_pki_build(self, node: PKIBuildNode):
         print(f"  -> [Action] Building PKI with root '{node.root_alias}' and intermediate '{node.intermediate_alias}'...")
 
-        cmd = ["python3", "vault_pki_doer.py", "rebuild-pki"]
+        cmd = [sys.executable, "vault_pki_doer.py", "rebuild-pki"]
 
         # Get all unique vaults from all collections
         all_vaults = []
@@ -1166,8 +1167,10 @@ disable_mlock = true
         cmd.extend(["--root-ca-alias", node.root_alias])
         cmd.extend(["--intermediate-ca-alias", node.intermediate_alias])
         
-        vault_root = self.globals.get("Single_vault_root", "./")
-        cmd.extend(["--vault-root", vault_root])
+        vault_root = Path(self.globals.get("Single_vault_root", "./"))
+        cmd.extend(["--vault-root", str(vault_root)])
+        cmd.extend(["--cert-root", str(vault_root / "certstore")])
+        cmd.extend(["--artifacts-dir", str(vault_root / "pki-artifacts")])
 
         print(f"     -> Executing: {' '.join(cmd)}")
         res = subprocess.run(cmd, shell=False, capture_output=True, text=True)

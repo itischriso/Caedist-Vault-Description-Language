@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import unittest
 import uuid
 from pathlib import Path
@@ -412,7 +413,7 @@ class EvaluatorTests(unittest.TestCase):
         evaluator.execute_pki_build(type("Node", (), {"root_alias": "root", "intermediate_alias": "intermediate"})())
 
         cmd = mock_run.call_args.args[0]
-        self.assertEqual(cmd[:3], ["python3", "vault_pki_doer.py", "rebuild-pki"])
+        self.assertEqual(cmd[:3], [sys.executable, "vault_pki_doer.py", "rebuild-pki"])
         self.assertIn("--root-ca-token", cmd)
         self.assertIn("root-token", cmd)
         self.assertIn("--intermediate-ca-token", cmd)
@@ -420,6 +421,12 @@ class EvaluatorTests(unittest.TestCase):
         self.assertIn("root:127.0.0.1:8900:root_ca", cmd)
         self.assertIn("intermediate:127.0.0.1:8910:intermediate_ca", cmd)
         self.assertIn("leaf:127.0.0.1:8920:leaf", cmd)
+        self.assertIn("--vault-root", cmd)
+        self.assertIn("C:/vault-root", cmd)
+        self.assertIn("--cert-root", cmd)
+        self.assertIn(str(Path("C:/vault-root") / "certstore"), cmd)
+        self.assertIn("--artifacts-dir", cmd)
+        self.assertIn(str(Path("C:/vault-root") / "pki-artifacts"), cmd)
 
     @covers("REQ-010")
     @patch("caedist_runner.subprocess.run")
