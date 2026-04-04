@@ -1,0 +1,16 @@
+; Bring down all vaults in a collection
+
+@Single_vault_root = "secure/path/to/caedist-vault/"
+
+default_vaults = {
+    "system","8900","system-vault"
+    "system-unsealer","8930","system-unsealer"
+    "user","8800","user-vault"
+    "root-ca","8450","root-ca-vault"
+    "user-unsealer","8830","user-unsealer"
+    "intermediate-ca","8550","intermediate-ca-vault"
+}
+
+default_vaults().stop
+
+default_vaults().status
