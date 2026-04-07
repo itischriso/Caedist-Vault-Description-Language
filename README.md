@@ -28,11 +28,14 @@ See [DESIGN.md] for the governing design principles.
 
 ## Package Contents
 
-- [caedist_runner.py]: lexer, parser, AST, evaluator, and runtime.
+- [cvdl.py]: lexer, parser, AST, evaluator, and runtime.
 - [terminal_launcher.py]: OS-specific interactive terminal launcher.
 - [vault_pki_doer.py]: standalone PKI rebuild/verify/teardown helper.
+- [singletonVaultExample.caedist]: deploy a single, unadorned vault 
 - [vault-description-language.caedist]: full topology example.
 - [warm-start.caedist]: reduced warm-start example.
+- [up-vaults.caedist]: start a collection of vaults example.
+- [down-vaults.caedist]: stop a collection of vaults example.
 
 ## Requirements
 
@@ -53,7 +56,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 vault version
-python3 caedist_runner.py --help
+python3 cvdl.py --help
 ```
 
 On Windows PowerShell:
@@ -63,7 +66,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 vault version
-python caedist_runner.py --help
+python cvdl.py --help
 ```
 
 ## Language Overview
@@ -150,7 +153,7 @@ The main example script is [vault-description-language.caedist]. It performs:
 Run it with:
 
 ```bash
-python3 caedist_runner.py vault-description-language.caedist
+python3 cvdl.py vault-description-language.caedist
 ```
 
 ## Example: Warm Start
@@ -158,7 +161,7 @@ python3 caedist_runner.py vault-description-language.caedist
 [warm-start.caedist] starts the declared vaults and checks status without replaying the full bootstrap:
 
 ```bash
-python3 caedist_runner.py warm-start.caedist
+python3 cvdl.py warm-start.caedist
 ```
 
 This is useful for bounce and restart scenarios where the topology already exists.
@@ -210,13 +213,4 @@ Still TODO:
 - Credential persistence mode is explicit and operator-chosen.
 - Plain file credential storage is intentionally marked unsafe.
 - PKI remains outside ring 0 by design.
-
-## Release Authenticity
-
-If you publish releases, ship checksums for every artifact:
-
-- `SHA256SUMS`
-- optionally a detached signature for `SHA256SUMS`
-
-Checksums are good. Signed checksums are better.
 
